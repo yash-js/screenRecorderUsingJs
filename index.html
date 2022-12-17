@@ -37,6 +37,8 @@
     </div>
   </body>
   <script>
+    let isRecoding = false;
+    const btn = document.querySelector("button");
     const start = async () => {
       const stream = await navigator.mediaDevices.getDisplayMedia({
         video: { mediaSource: "screen" },
@@ -44,16 +46,24 @@
       const data = [];
 
       const mediaRecorder = new MediaRecorder(stream);
-
+      mediaRecorder.onstart = (e) => {
+        isRecoding = true;
+        btn.innerHTML = "Recording";
+        btn.disabled = true;
+        btn.style.opacity = 0.6;
+      };
       mediaRecorder.ondataavailable = (e) => data.push(e.data);
       mediaRecorder.start();
 
       mediaRecorder.onstop = (e) => {
-        document.querySelector("video").src = URL.createObjectURL(
-          new Blob(data, {
-            type: data[0].type,
-          })
-        );
+        const blob = new Blob(data, {
+          type: data[0].type,
+        });
+        document.querySelector("video").src = URL.createObjectURL(blob);
+        isRecoding = false;
+        btn.innerHTML = "Start Recording";
+        btn.style.opacity = 1;
+        btn.disabled = false;
       };
     };
   </script>
