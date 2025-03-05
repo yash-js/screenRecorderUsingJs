@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta http-equiv="X-UA-Compatible" content="IE=edge" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Screen Recorder</title>
+    <title>Screen Recorder with Audio Options</title>
     <style>
       .container {
         height: 95vh;
@@ -12,12 +12,13 @@
         display: flex;
         flex-direction: column;
         justify-content: space-evenly;
+        align-items: center;
       }
       .container video {
         height: 90%;
       }
-      .container button {
-        margin: 0;
+      .container button, .container select {
+        margin: 5px;
         border: none;
         padding: 15px;
         border-radius: 10px;
@@ -26,45 +27,94 @@
         font-weight: 600;
         font-size: 20px;
         font-family: monospace;
-        margin-bottom: 5px;
+      }
+      .container select {
+        background: white;
+        color: black;
       }
     </style>
   </head>
   <body>
     <div class="container">
+      <select id="audioSource">
+        <option value="none">No Audio</option>
+        <option value="mic">Microphone</option>
+        <option value="system">System Audio</option>
+        <option value="both">Both (Mic + System)</option>
+      </select>
       <button onclick="start()">Start Recording</button>
-      <video width="100%" controls="controls"></video>
+      <video width="100%" controls></video>
     </div>
   </body>
   <script>
-    let isRecoding = false;
+    let isRecording = false;
     const btn = document.querySelector("button");
-    const start = async () => {
-      const stream = await navigator.mediaDevices.getDisplayMedia({
-        video: { mediaSource: "screen" },
-      });
-      const data = [];
+    const audioSelect = document.getElementById("audioSource");
 
-      const mediaRecorder = new MediaRecorder(stream);
-      mediaRecorder.onstart = (e) => {
-        isRecoding = true;
+    const start = async () => {
+      const audioOption = audioSelect.value;
+      const screenStream = await navigator.mediaDevices.getDisplayMedia({
+        video: { mediaSource: "screen" },
+        audio: audioOption === "system" || audioOption === "both"
+          ? { echoCancellation: false, noiseSuppression: false, sampleRate: 44100 }
+          : false
+      });
+
+      let micStream = null;
+      if (audioOption === "mic" || audioOption === "both") {
+        micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      }
+
+      let finalStream;
+      if (audioOption === "both" && micStream) {
+        const audioContext = new AudioContext();
+        const systemAudio = audioContext.createMediaStreamSource(screenStream);
+        const micAudio = audioContext.createMediaStreamSource(micStream);
+        const destination = audioContext.createMediaStreamDestination();
+        systemAudio.connect(destination);
+        micAudio.connect(destination);
+
+        finalStream = new MediaStream([
+          ...screenStream.getVideoTracks(),
+          ...destination.stream.getAudioTracks()
+        ]);
+      } else {
+        finalStream = new MediaStream([
+          ...screenStream.getVideoTracks(),
+          ...(micStream ? micStream.getAudioTracks() : []),
+          ...(screenStream.getAudioTracks() || [])
+        ]);
+      }
+
+      const data = [];
+      const mediaRecorder = new MediaRecorder(finalStream, {
+        mimeType: "video/webm; codecs=vp9,opus"
+      });
+      
+      mediaRecorder.onstart = () => {
+        isRecording = true;
         btn.innerHTML = "Recording";
         btn.disabled = true;
         btn.style.opacity = 0.6;
       };
+
       mediaRecorder.ondataavailable = (e) => data.push(e.data);
       mediaRecorder.start();
 
-      mediaRecorder.onstop = (e) => {
-        const blob = new Blob(data, {
-          type: data[0].type,
-        });
-        document.querySelector("video").src = URL.createObjectURL(blob);
-        isRecoding = false;
+      mediaRecorder.onstop = () => {
+        const blob = new Blob(data, { type: "video/webm" });
+        const videoElement = document.querySelector("video");
+        videoElement.src = URL.createObjectURL(blob);
+        videoElement.controls = true;
+        isRecording = false;
         btn.innerHTML = "Start Recording";
         btn.style.opacity = 1;
         btn.disabled = false;
       };
+
+      screenStream.getVideoTracks()[0].addEventListener("ended", () => {
+        mediaRecorder.stop();
+      });
     };
   </script>
 </html>
